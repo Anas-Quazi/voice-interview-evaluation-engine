@@ -1,6 +1,9 @@
 import os
 import requests
 from dotenv import load_dotenv
+import sys
+
+sys.stdout.reconfigure(encoding = "utf-8")
 
 load_dotenv()
 key = os.getenv("GNANI_API_KEY") #^ ganai api key
