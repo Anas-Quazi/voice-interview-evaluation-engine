@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interview Coach</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/"><span class="light" aria-hidden="true"></span>Interview Coach</a>
+  <div class="progress" id="progress" hidden>
+    <div class="segments" id="segments" role="img" aria-label="Progress"></div>
+  </div>
+</header>
+
+<main>
+  <div class="error" id="error" role="alert" hidden>
+    <p id="error-text"></p>
+    <div class="error-actions">
+      <button class="btn small" id="error-retry" type="button" hidden>Try again</button>
+      <button class="link" id="error-close" type="button">Dismiss</button>
+    </div>
+  </div>
+
+  <noscript><p class="error">This app needs JavaScript to run.</p></noscript>
+
+  <!-- 1. setup -->
+  <section class="screen" id="screen-setup">
+    <h1>Practice the interview before the real one</h1>
+    <p class="lead">Pick a role, answer out loud, and get feedback after every question. Each answer can be up to 30 seconds.</p>
+
+    <form class="setup-form" id="setup-form" novalidate>
+      <label class="field">
+        <span class="field-label">Role you're preparing for</span>
+        <input id="role" name="role" list="roles" placeholder="Data Scientist" maxlength="80" autocomplete="off" required>
+        <datalist id="roles">
+          <option value="Data Scientist"></option>
+          <option value="Data Analyst"></option>
+          <option value="Software Developer"></option>
+          <option value="Web Developer"></option>
+          <option value="Digital Marketing Executive"></option>
+          <option value="Customer Support Executive"></option>
+          <option value="Sales Executive"></option>
+          <option value="HR Executive"></option>
+          <option value="Accountant"></option>
+        </datalist>
+      </label>
+
+      <fieldset class="field">
+        <legend class="field-label">Your level</legend>
+        <div class="choices">
+          <label><input type="radio" name="level" value="fresher" checked><span>Fresher</span></label>
+          <label><input type="radio" name="level" value="experienced"><span>Experienced</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field-label">Language you'll answer in</legend>
+        <div class="choices">
+          <label><input type="radio" name="language" value="hi" checked><span>Hindi</span></label>
+          <label><input type="radio" name="language" value="en"><span>English</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field-label">Number of questions</legend>
+        <div class="choices">
+          <label><input type="radio" name="num_questions" value="3"><span>3</span></label>
+          <label><input type="radio" name="num_questions" value="5" checked><span>5</span></label>
+          <label><input type="radio" name="num_questions" value="7"><span>7</span></label>
+          <label><input type="radio" name="num_questions" value="10"><span>10</span></label>
+        </div>
+      </fieldset>
+
+      <button class="btn primary" id="start-btn" type="submit">Start interview</button>
+      <p class="hint">Your browser will ask to use the microphone. Turn your speaker on too, the coach talks back.</p>
+    </form>
+  </section>
+
+  <!-- 2. interview -->
+  <section class="screen" id="screen-interview" hidden>
+    <div class="question">
+      <p class="question-meta">
+        <span id="q-count"></span>
+        <button class="link" id="replay-question" type="button">Play question again</button>
+      </p>
+      <h2 id="question-text" tabindex="-1"></h2>
+    </div>
+
+    <div id="phases">
+
+      <div class="stage" data-phase="idle">
+        <button class="record" id="record-btn" type="button" aria-label="Start recording"><span class="glyph"></span></button>
+        <p class="stage-title">Start recording</p>
+        <p class="hint">Up to 30 seconds. Answer the way you would in the real interview.</p>
+      </div>
+
+      <div class="stage" data-phase="recording" hidden>
+        <button class="record stop" id="stop-btn" type="button" aria-label="Stop recording"><span class="glyph"></span></button>
+        <p class="timer"><span id="timer">0:00</span> <span class="timer-max">of 0:30</span></p>
+        <p class="hint">Recording. Press stop when you're done.</p>
+      </div>
+
+      <div class="stage" data-phase="review" hidden>
+        <p class="stage-title">Listen back, then send it</p>
+        <audio id="review-audio" controls></audio>
+        <div class="actions">
+          <button class="btn primary" id="send-btn" type="button">Send answer</button>
+          <button class="btn secondary" id="redo-btn" type="button">Record again</button>
+        </div>
+      </div>
+
+      <div class="stage" data-phase="processing" hidden aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="stage-title">Reviewing your answer</p>
+        <p class="hint">This usually takes a few seconds.</p>
+      </div>
+
+      <article class="sheet" data-phase="feedback" hidden>
+        <section>
+          <h3>What I heard</h3>
+          <blockquote id="fb-transcript"></blockquote>
+        </section>
+
+        <section>
+          <div class="sheet-head">
+            <h3>Scores</h3>
+            <p class="big-number"><span id="fb-average"></span> <span class="of">out of 5</span></p>
+          </div>
+          <div class="bars" id="fb-bars"></div>
+        </section>
+
+        <section class="two-col">
+          <div>
+            <h3>What worked</h3>
+            <p id="fb-strength"></p>
+          </div>
+          <div>
+            <h3>Try this next time</h3>
+            <p id="fb-improvement"></p>
+          </div>
+        </section>
+
+        <section id="fb-grammar-wrap">
+          <h3>Grammar fixes</h3>
+          <ul class="fixes" id="fb-grammar"></ul>
+        </section>
+
+        <section>
+          <h3>A stronger version of your answer</h3>
+          <p class="better" id="fb-better"></p>
+        </section>
+
+        <div class="actions">
+          <button class="btn primary" id="next-btn" type="button">Next question</button>
+          <button class="btn secondary" id="replay-reply" type="button">Play coach's reply</button>
+          <button class="link" id="finish-btn" type="button">Finish now and see report</button>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- 3. report -->
+  <section class="screen" id="screen-report" hidden>
+    <div class="stage" id="report-loading" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="stage-title">Putting your report together</p>
+    </div>
+
+    <div id="report-body" hidden>
+      <h1>Your interview report</h1>
+      <p class="lead" id="r-role"></p>
+
+      <div class="overall">
+        <p class="big-number huge"><span id="r-overall"></span> <span class="of">out of 5</span></p>
+        <p id="r-summary"></p>
+      </div>
+
+      <section class="sheet">
+        <section>
+          <h3>Average scores</h3>
+          <div class="bars" id="r-bars"></div>
+        </section>
+
+        <section class="two-col">
+          <div>
+            <h3>What's working</h3>
+            <ul class="plain" id="r-strengths"></ul>
+          </div>
+          <div>
+            <h3>Work on next</h3>
+            <ul class="plain" id="r-focus"></ul>
+          </div>
+        </section>
+
+        <section id="r-tips-wrap">
+          <h3>Practice this week</h3>
+          <ul class="plain" id="r-tips"></ul>
+        </section>
+      </section>
+
+      <h3 class="recap-title">Question by question</h3>
+      <div class="recap" id="r-turns"></div>
+
+      <div class="actions">
+        <button class="btn primary" id="restart-btn" type="button">Start a new interview</button>
+        <button class="btn secondary" id="print-btn" type="button">Save as PDF</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
