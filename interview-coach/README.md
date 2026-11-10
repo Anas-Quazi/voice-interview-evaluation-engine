@@ -1,58 +1,64 @@
 # Interview Coach
 
-A mock interview you can do in the browser. The coach asks a question out loud, you answer with your microphone, and you get scores, grammar fixes and a better version of your answer. Then it asks the next question, based on what you said. At the end you get a report.
+A voice-based mock interview that runs in the browser. The coach asks a question aloud, you answer with your microphone, and you receive scores, grammar corrections and an improved version of your answer. Each follow-up question is generated from your previous responses, and a summary report is produced at the end.
 
-It is the same pipeline as `test_pipeline.py` (Prisma speech-to-text, Gemini, Timbre text-to-speech), wrapped in a small web app.
+**Pipeline:** Prisma (speech-to-text) → Gemini (evaluation and question generation) → Timbre (text-to-speech), served by a FastAPI backend with a lightweight static frontend.
 
-## Run it
+## Quick Start
 
-You need Python 3.9 or newer.
+**Requirements:** Python 3.9+, a modern browser (Chrome, Edge, Firefox or Safari), and API keys for Gnani (Prisma/Timbre) and Gemini.
 
-```
+```bash
 python -m venv .venv
-.venv\Scripts\activate          (on Mac or Linux: source .venv/bin/activate)
+.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env          (on Mac or Linux: cp .env.example .env)
 ```
 
-Open `.env` and paste in your two keys, then start the server:
+Create a `.env` file in the project root:
 
+```env
+GNANI_API_KEY=your_gnani_key
+GEMINI_API_KEY=your_gemini_key
 ```
+
+Start the server and open <http://localhost:8000>, then allow microphone access:
+
+```bash
 uvicorn app:app --reload
 ```
 
-Go to http://localhost:8000 in Chrome, Edge, Firefox or Safari and allow the microphone when asked.
+> The microphone requires `localhost` or an `https` origin. Deploy behind HTTPS.
 
-The microphone only works on `localhost` or on an `https` address. If you put this on a server, put it behind https.
-
-## How it fits together
+## Project Structure
 
 ```
-app.py             the backend: sessions, Prisma, Gemini, Timbre, report
-static/index.html  the three screens: setup, interview, report
-static/style.css   styling
-static/app.js      recording, sending the answer, showing feedback
-assets/tts/        the coach's audio clips (created on first run, cleaned up after 2 hours)
+app.py              Backend: sessions, Prisma, Gemini, Timbre, report
+static/index.html   Setup, interview and report screens
+static/style.css    Styling
+static/app.js       Recording, upload, feedback display
+assets/tts/         Generated coach audio (auto-created, purged after 2 hours)
 ```
 
-One interview goes like this:
+## How an Interview Works
 
-1. `POST /api/session/start` creates a session and returns the first question with its audio.
-2. The browser records up to 30 seconds, turns it into a 16 kHz WAV file, and sends it to `POST /api/session/{id}/answer`.
-3. The server runs speech-to-text, then asks Gemini to judge the answer and write the next question (it sees all earlier questions and answers), then makes the audio for the feedback and the next question at the same time.
-4. After the last question, `GET /api/session/{id}/report` returns the averages and a short written summary.
+1. `POST /api/session/start` creates a session and returns the first question with audio.
+2. The browser records up to 30 seconds, converts it to a 16 kHz WAV and sends it to `POST /api/session/{id}/answer`.
+3. The server transcribes the audio, then Gemini scores the answer and writes the next question using the full history. Audio for the feedback and next question is synthesized in parallel.
+4. After the final question, `GET /api/session/{id}/report` returns average scores and a written summary.
 
-## Things you may want to change
+## Configuration
 
-All of these are at the top of `app.py`.
+Settings live at the top of `app.py`:
 
-- `GEMINI_MODELS`: the fallback list from your test script, unchanged.
-- `TTS_VOICE` and `LANGUAGES`: the English option uses `en-IN` for speech. If your Timbre plan doesn't have that voice or language code, change it there.
-- `OPENING_QUESTIONS`: the first question is fixed so the interview starts at once. Gemini writes every one after it.
-- `SESSION_TTL`: how long a session is kept in memory.
+| Setting | Purpose |
+| --- | --- |
+| `GEMINI_MODELS` | Ordered fallback list of Gemini models |
+| `TTS_VOICE`, `LANGUAGES` | Voice and language codes (English uses `en-IN`; change if your Timbre plan lacks it) |
+| `OPENING_QUESTIONS` | Fixed first question so the interview starts instantly |
+| `SESSION_TTL` | How long a session is kept in memory |
 
-## Good to know
+## Notes
 
-- Sessions live in memory, so restarting the server ends any interview in progress. If you want history or accounts later, the place to add a database is the `Session` class.
-- If speech output fails for a moment, the interview still works. You just see the text without audio.
-- If the speech service rejects the WAV file, check the sample rate in `WAV_RATE` at the top of `static/app.js`.
+- Sessions are stored in memory; restarting the server ends any interview in progress. To add history or accounts, extend the `Session` class with a database.
+- If text-to-speech fails, the interview continues with text only.
+- If the speech service rejects the audio, check `WAV_RATE` at the top of `static/app.js`.
