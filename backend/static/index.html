@@ -3,17 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Interview Coach</title>
+  <title>VoiceCoach — Interview Evaluation Engine</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-avatar="idle">
 
 <header class="top">
-  <a class="brand" href="/"><span class="light" aria-hidden="true"></span>Interview Coach</a>
-  <div class="progress" id="progress" hidden>
-    <div class="segments" id="segments" role="img" aria-label="Progress"></div>
+  <a class="brand" href="/"><span class="light" aria-hidden="true"></span>VOICE<em>COACH</em><span class="brand-sub">— INTERVIEW EVALUATION ENGINE</span></a>
+  <div class="chips">
+    <div class="chip"><small>QUESTION</small><b id="chip-q">—</b></div>
+    <div class="chip"><small>AVG SCORE</small><b id="chip-avg">—</b></div>
+    <div class="chip"><small>BEST</small><b id="chip-best">—</b></div>
+    <div class="chip"><small>TARGET</small><b id="chip-target">—</b></div>
+    <button class="chip key-help" id="help-btn" type="button" aria-label="Keyboard shortcuts">?</button>
   </div>
 </header>
+
+<nav class="stepper" id="stepper" aria-label="Interview progress"></nav>
 
 <main>
   <div class="error" id="error" role="alert" hidden>
@@ -28,178 +34,276 @@
 
   <!-- 1. setup -->
   <section class="screen" id="screen-setup">
-    <h1>Practice the interview before the real one</h1>
-    <p class="lead">Pick a role, answer out loud, and get feedback after every question. Each answer can be up to 30 seconds.</p>
+    <form id="setup-form" novalidate>
+      <div class="grid two">
+        <div class="panel accent">
+          <h3>Interview setup</h3>
+          <label class="field">
+            <span class="field-label">Role you're preparing for</span>
+            <input id="role" name="role" list="roles" placeholder="Data Scientist" maxlength="80" autocomplete="off" required>
+            <datalist id="roles">
+              <option value="Data Scientist"></option>
+              <option value="Data Analyst"></option>
+              <option value="Software Developer"></option>
+              <option value="Web Developer"></option>
+              <option value="Digital Marketing Executive"></option>
+              <option value="Customer Support Executive"></option>
+              <option value="Sales Executive"></option>
+              <option value="HR Executive"></option>
+              <option value="Accountant"></option>
+            </datalist>
+          </label>
 
-    <form class="setup-form" id="setup-form" novalidate>
-      <label class="field">
-        <span class="field-label">Role you're preparing for</span>
-        <input id="role" name="role" list="roles" placeholder="Data Scientist" maxlength="80" autocomplete="off" required>
-        <datalist id="roles">
-          <option value="Data Scientist"></option>
-          <option value="Data Analyst"></option>
-          <option value="Software Developer"></option>
-          <option value="Web Developer"></option>
-          <option value="Digital Marketing Executive"></option>
-          <option value="Customer Support Executive"></option>
-          <option value="Sales Executive"></option>
-          <option value="HR Executive"></option>
-          <option value="Accountant"></option>
-        </datalist>
-      </label>
+          <fieldset class="field">
+            <legend class="field-label">Your level</legend>
+            <div class="choices">
+              <label><input type="radio" name="level" value="fresher" checked><span>Fresher</span></label>
+              <label><input type="radio" name="level" value="experienced"><span>Experienced</span></label>
+            </div>
+          </fieldset>
 
-      <fieldset class="field">
-        <legend class="field-label">Your level</legend>
-        <div class="choices">
-          <label><input type="radio" name="level" value="fresher" checked><span>Fresher</span></label>
-          <label><input type="radio" name="level" value="experienced"><span>Experienced</span></label>
+          <fieldset class="field">
+            <legend class="field-label">Language you'll answer in</legend>
+            <div class="choices">
+              <label><input type="radio" name="language" value="hi" checked><span>Hindi</span></label>
+              <label><input type="radio" name="language" value="en"><span>English</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend class="field-label">Number of questions</legend>
+            <div class="choices">
+              <label><input type="radio" name="num_questions" value="3"><span>3</span></label>
+              <label><input type="radio" name="num_questions" value="5" checked><span>5</span></label>
+              <label><input type="radio" name="num_questions" value="7"><span>7</span></label>
+              <label><input type="radio" name="num_questions" value="10"><span>10</span></label>
+            </div>
+          </fieldset>
         </div>
-      </fieldset>
 
-      <fieldset class="field">
-        <legend class="field-label">Language you'll answer in</legend>
-        <div class="choices">
-          <label><input type="radio" name="language" value="hi" checked><span>Hindi</span></label>
-          <label><input type="radio" name="language" value="en"><span>English</span></label>
+        <div class="panel accent">
+          <h3>Personalise</h3>
+          <fieldset class="field">
+            <legend class="field-label">Resume</legend>
+            <div class="choices">
+              <label><input type="radio" name="resume_mode" value="none" checked><span>Without resume</span></label>
+              <label><input type="radio" name="resume_mode" value="with"><span>With resume</span></label>
+            </div>
+          </fieldset>
+
+          <div class="field" id="resume-box" hidden>
+            <label class="drop" id="resume-drop">
+              <input type="file" id="resume-file" accept=".pdf,.docx,.txt">
+              <span id="resume-status">Drop your resume here, or click to choose (PDF, DOCX or TXT, up to 5 MB)</span>
+            </label>
+          </div>
+
+          <fieldset class="field">
+            <legend class="field-label">Target company</legend>
+            <div class="choices wrap">
+              <label><input type="radio" name="company" value="none" checked><span>None</span></label>
+              <label><input type="radio" name="company" value="tcs"><span>TCS</span></label>
+              <label><input type="radio" name="company" value="infosys"><span>Infosys</span></label>
+              <label><input type="radio" name="company" value="wipro"><span>Wipro</span></label>
+              <label><input type="radio" name="company" value="accenture"><span>Accenture</span></label>
+              <label><input type="radio" name="company" value="google"><span>Google</span></label>
+              <label><input type="radio" name="company" value="amazon"><span>Amazon</span></label>
+              <label><input type="radio" name="company" value="microsoft"><span>Microsoft</span></label>
+              <label><input type="radio" name="company" value="other"><span>Other</span></label>
+            </div>
+          </fieldset>
+
+          <label class="field" id="company-other-box" hidden>
+            <span class="field-label">Company name</span>
+            <input id="company-other" maxlength="40" autocomplete="off" placeholder="Flipkart">
+          </label>
+
+          <button class="btn primary wide" id="start-btn" type="submit">Start interview</button>
+          <p class="hint">Allow the microphone when asked and turn your speaker on. Each answer can be up to 30 seconds.</p>
         </div>
-      </fieldset>
-
-      <fieldset class="field">
-        <legend class="field-label">Number of questions</legend>
-        <div class="choices">
-          <label><input type="radio" name="num_questions" value="3"><span>3</span></label>
-          <label><input type="radio" name="num_questions" value="5" checked><span>5</span></label>
-          <label><input type="radio" name="num_questions" value="7"><span>7</span></label>
-          <label><input type="radio" name="num_questions" value="10"><span>10</span></label>
-        </div>
-      </fieldset>
-
-      <button class="btn primary" id="start-btn" type="submit">Start interview</button>
-      <p class="hint">Your browser will ask to use the microphone. Turn your speaker on too, the coach talks back.</p>
+      </div>
     </form>
   </section>
 
   <!-- 2. interview -->
   <section class="screen" id="screen-interview" hidden>
-    <div class="question">
-      <p class="question-meta">
-        <span id="q-count"></span>
-        <button class="link" id="replay-question" type="button">Play question again</button>
-      </p>
-      <h2 id="question-text" tabindex="-1"></h2>
-    </div>
+    <div class="interview-grid">
+      <aside class="panel accent interviewer">
+        <h3>AI interviewer</h3>
+        <div class="avatar-wrap">
+          <svg class="avatar" viewBox="0 0 200 200" role="img" aria-label="AI interviewer">
+            <defs>
+              <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#101a2a"/><stop offset="1" stop-color="#070b14"/>
+              </linearGradient>
+              <linearGradient id="neon" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#22e6ff"/><stop offset="1" stop-color="#a78bfa"/>
+              </linearGradient>
+            </defs>
+            <circle class="halo" cx="100" cy="104" r="92"/>
+            <circle class="halo two" cx="100" cy="104" r="82"/>
+            <line x1="100" y1="46" x2="100" y2="26" stroke="url(#neon)" stroke-width="4" stroke-linecap="round"/>
+            <circle class="antenna" cx="100" cy="22" r="7"/>
+            <rect x="26" y="88" width="14" height="38" rx="7" fill="url(#neon)"/>
+            <rect x="160" y="88" width="14" height="38" rx="7" fill="url(#neon)"/>
+            <rect x="40" y="46" width="120" height="118" rx="40" fill="url(#face)" stroke="url(#neon)" stroke-width="3"/>
+            <g class="eyes">
+              <rect class="eye" x="66" y="82" width="20" height="24" rx="10"/>
+              <rect class="eye" x="114" y="82" width="20" height="24" rx="10"/>
+            </g>
+            <rect id="mouth" x="74" y="130" width="52" height="6" rx="3" fill="url(#neon)"/>
+          </svg>
+          <p class="avatar-status" id="avatar-status">READY</p>
+        </div>
 
-    <div id="phases">
+        <p class="question-meta">
+          <span id="q-count"></span>
+          <span class="tag" id="q-type"></span>
+          <span class="tag violet" id="q-diff"></span>
+        </p>
+        <h2 id="question-text" tabindex="-1"></h2>
+        <button class="link" id="replay-question" type="button">Play question again <kbd>P</kbd></button>
+      </aside>
 
-      <div class="stage" data-phase="idle">
-        <button class="record" id="record-btn" type="button" aria-label="Start recording"><span class="glyph"></span></button>
-        <p class="stage-title">Start recording</p>
-        <p class="hint">Up to 30 seconds. Answer the way you would in the real interview.</p>
-      </div>
+      <div id="phases">
+        <div class="panel stage" data-phase="idle">
+          <button class="record" id="record-btn" type="button" aria-label="Start recording">
+            <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12h-2Z"/></svg>
+          </button>
+          <p class="stage-title">Start recording <kbd>Space</kbd></p>
+          <p class="hint">Up to 30 seconds. Answer the way you would in the real interview.</p>
+        </div>
 
-      <div class="stage" data-phase="recording" hidden>
-        <button class="record stop" id="stop-btn" type="button" aria-label="Stop recording"><span class="glyph"></span></button>
-        <p class="timer"><span id="timer">0:00</span> <span class="timer-max">of 0:30</span></p>
-        <p class="hint">Recording. Press stop when you're done.</p>
-      </div>
+        <div class="panel stage" data-phase="recording" hidden>
+          <button class="record stop" id="stop-btn" type="button" aria-label="Stop recording"><span class="glyph"></span></button>
+          <canvas id="wave" class="wave" aria-hidden="true"></canvas>
+          <p class="timer"><span id="timer">0:00</span> <span class="timer-max">of 0:30</span></p>
+          <p class="hint">Listening. Press stop or <kbd>Space</kbd> when you're done.</p>
+        </div>
 
-      <div class="stage" data-phase="review" hidden>
-        <p class="stage-title">Listen back, then send it</p>
-        <audio id="review-audio" controls></audio>
-        <div class="actions">
-          <button class="btn primary" id="send-btn" type="button">Send answer</button>
-          <button class="btn secondary" id="redo-btn" type="button">Record again</button>
+        <div class="panel stage" data-phase="review" hidden>
+          <p class="stage-title">Listen back, then send it</p>
+          <audio id="review-audio" controls></audio>
+          <div class="actions center">
+            <button class="btn primary" id="send-btn" type="button">Send answer <kbd>Enter</kbd></button>
+            <button class="btn secondary" id="redo-btn" type="button">Record again <kbd>R</kbd></button>
+          </div>
+        </div>
+
+        <div class="panel stage" data-phase="processing" hidden aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p class="stage-title">Evaluating your answer</p>
+          <p class="hint">Transcribing, scoring and preparing the next question.</p>
+        </div>
+
+        <div class="feedback" data-phase="feedback" hidden>
+          <section class="panel">
+            <h3>What I heard</h3>
+            <blockquote id="fb-transcript"></blockquote>
+          </section>
+
+          <div class="grid two">
+            <section class="panel">
+              <div class="sheet-head">
+                <h3>Scores</h3>
+                <p class="big-number"><span id="fb-average"></span> <span class="of">/ 5</span></p>
+              </div>
+              <div class="rings" id="fb-rings"></div>
+            </section>
+            <section class="panel">
+              <h3>Skill radar</h3>
+              <div class="chart radar"><canvas id="fb-radar"></canvas></div>
+            </section>
+          </div>
+
+          <section class="panel" id="fb-voice-wrap">
+            <div class="sheet-head">
+              <h3>Voice analysis</h3>
+              <p class="big-number"><span id="fb-delivery"></span> <span class="of">/ 100 delivery</span></p>
+            </div>
+            <div class="tiles" id="fb-tiles"></div>
+            <div class="chips-row" id="fb-fillers"></div>
+            <p class="voice-tip" id="fb-voice-tip"></p>
+            <div class="chart short"><canvas id="fb-delivery-chart"></canvas></div>
+          </section>
+
+          <div class="grid two">
+            <section class="panel"><h3>What worked</h3><p id="fb-strength"></p></section>
+            <section class="panel"><h3>Try this next time</h3><p id="fb-improvement"></p></section>
+          </div>
+
+          <section class="panel" id="fb-grammar-wrap">
+            <h3>Grammar fixes</h3>
+            <ul class="fixes" id="fb-grammar"></ul>
+          </section>
+
+          <section class="panel">
+            <h3>A stronger version of your answer</h3>
+            <p class="better" id="fb-better"></p>
+          </section>
+
+          <div class="actions">
+            <button class="btn primary" id="next-btn" type="button">Next question</button>
+            <button class="btn secondary" id="replay-reply" type="button">Play coach's reply <kbd>P</kbd></button>
+            <button class="link" id="finish-btn" type="button">Finish now and see report <kbd>F</kbd></button>
+          </div>
         </div>
       </div>
-
-      <div class="stage" data-phase="processing" hidden aria-live="polite">
-        <div class="spinner" aria-hidden="true"></div>
-        <p class="stage-title">Reviewing your answer</p>
-        <p class="hint">This usually takes a few seconds.</p>
-      </div>
-
-      <article class="sheet" data-phase="feedback" hidden>
-        <section>
-          <h3>What I heard</h3>
-          <blockquote id="fb-transcript"></blockquote>
-        </section>
-
-        <section>
-          <div class="sheet-head">
-            <h3>Scores</h3>
-            <p class="big-number"><span id="fb-average"></span> <span class="of">out of 5</span></p>
-          </div>
-          <div class="bars" id="fb-bars"></div>
-        </section>
-
-        <section class="two-col">
-          <div>
-            <h3>What worked</h3>
-            <p id="fb-strength"></p>
-          </div>
-          <div>
-            <h3>Try this next time</h3>
-            <p id="fb-improvement"></p>
-          </div>
-        </section>
-
-        <section id="fb-grammar-wrap">
-          <h3>Grammar fixes</h3>
-          <ul class="fixes" id="fb-grammar"></ul>
-        </section>
-
-        <section>
-          <h3>A stronger version of your answer</h3>
-          <p class="better" id="fb-better"></p>
-        </section>
-
-        <div class="actions">
-          <button class="btn primary" id="next-btn" type="button">Next question</button>
-          <button class="btn secondary" id="replay-reply" type="button">Play coach's reply</button>
-          <button class="link" id="finish-btn" type="button">Finish now and see report</button>
-        </div>
-      </article>
-
     </div>
   </section>
 
   <!-- 3. report -->
   <section class="screen" id="screen-report" hidden>
-    <div class="stage" id="report-loading" aria-live="polite">
+    <div class="panel stage" id="report-loading" aria-live="polite">
       <div class="spinner" aria-hidden="true"></div>
       <p class="stage-title">Putting your report together</p>
     </div>
 
     <div id="report-body" hidden>
-      <h1>Your interview report</h1>
-      <p class="lead" id="r-role"></p>
-
-      <div class="overall">
-        <p class="big-number huge"><span id="r-overall"></span> <span class="of">out of 5</span></p>
-        <p id="r-summary"></p>
+      <div class="panel accent overall">
+        <div class="overall-ring" id="r-overall-ring"></div>
+        <div>
+          <h1>Your interview report</h1>
+          <p class="lead" id="r-role"></p>
+          <p id="r-summary"></p>
+        </div>
       </div>
 
-      <section class="sheet">
-        <section>
-          <h3>Average scores</h3>
-          <div class="bars" id="r-bars"></div>
-        </section>
+      <div class="grid two">
+        <section class="panel"><h3>Average skill radar</h3><div class="chart radar"><canvas id="r-radar"></canvas></div></section>
+        <section class="panel"><h3>Score by question</h3><div class="chart"><canvas id="r-trend"></canvas></div></section>
+      </div>
 
-        <section class="two-col">
-          <div>
-            <h3>What's working</h3>
-            <ul class="plain" id="r-strengths"></ul>
-          </div>
-          <div>
-            <h3>Work on next</h3>
-            <ul class="plain" id="r-focus"></ul>
-          </div>
-        </section>
+      <section class="panel">
+        <h3>Skill scores</h3>
+        <div class="rings" id="r-rings"></div>
+        <div class="table-wrap"><table class="heat" id="r-heat"></table></div>
+      </section>
 
-        <section id="r-tips-wrap">
-          <h3>Practice this week</h3>
-          <ul class="plain" id="r-tips"></ul>
+      <div id="r-voice-wrap">
+        <section class="panel">
+          <div class="sheet-head">
+            <h3>Voice analysis</h3>
+            <p class="big-number"><span id="r-delivery"></span> <span class="of">/ 100 delivery</span></p>
+          </div>
+          <p id="r-voice-summary"></p>
+          <div class="chips-row" id="r-fillers"></div>
         </section>
+        <div class="grid three">
+          <section class="panel"><h3>Words per minute</h3><p class="hint">Shaded band: 110–160 is comfortable</p><div class="chart"><canvas id="r-wpm"></canvas></div></section>
+          <section class="panel"><h3>Filler words per question</h3><p class="hint">Fewer is better</p><div class="chart"><canvas id="r-fill-chart"></canvas></div></section>
+          <section class="panel"><h3>Delivery breakdown</h3><p class="hint">Average out of 100</p><div class="chart"><canvas id="r-breakdown"></canvas></div></section>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <section class="panel"><h3>What's working</h3><ul class="plain" id="r-strengths"></ul></section>
+        <section class="panel"><h3>Work on next</h3><ul class="plain" id="r-focus"></ul></section>
+      </div>
+
+      <section class="panel" id="r-tips-wrap">
+        <h3>Practice this week</h3>
+        <ul class="plain" id="r-tips"></ul>
       </section>
 
       <h3 class="recap-title">Question by question</h3>
@@ -213,6 +317,25 @@
   </section>
 </main>
 
+<div class="overlay" id="help" hidden>
+  <div class="panel accent help-card" role="dialog" aria-label="Keyboard shortcuts">
+    <h3>Keyboard shortcuts</h3>
+    <dl>
+      <dt><kbd>Space</kbd></dt><dd>Start or stop recording</dd>
+      <dt><kbd>Enter</kbd></dt><dd>Send the answer, or go to the next question</dd>
+      <dt><kbd>R</kbd></dt><dd>Record again</dd>
+      <dt><kbd>P</kbd></dt><dd>Replay the coach</dd>
+      <dt><kbd>F</kbd></dt><dd>Finish and see the report</dd>
+      <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+    </dl>
+    <button class="btn secondary" id="help-close" type="button">Close</button>
+  </div>
+</div>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="ui.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

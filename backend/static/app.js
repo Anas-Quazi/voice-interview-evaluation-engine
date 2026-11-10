@@ -26,7 +26,13 @@ const state = {
   duration: 0,
   timerId: null,
   meter: null,
-  answer: null,         // {blob, name, peak, url}
+  answer: null,         // {blob, name, peak, url, metrics}
+  starting: false,      // true while the browser is opening the microphone
+  phase: "idle",
+  history: [],          // {average, scores} for each answered question
+  resumeText: "",
+  uploading: false,
+  target: "General",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -42,11 +48,27 @@ function h(tag, className, text) {
 
 /* ---------------------------------------------------------------- screens and messages */
 
+const fmtScore = (n) => n.toFixed(1);
+
+function refreshHeader() {
+  const averages = state.history.map((t) => t.average);
+  UI.header({
+    q: state.question ? `${state.question.number}/${state.question.total}` : "—",
+    avg: averages.length ? fmtScore(averages.reduce((a, b) => a + b, 0) / averages.length) : "—",
+    best: averages.length ? fmtScore(Math.max(...averages)) : "—",
+    target: state.sessionId ? state.target : "—",
+  });
+}
+
+function selectedTotal() {
+  const picked = document.querySelector('input[name="num_questions"]:checked');
+  return picked ? Number(picked.value) : 5;
+}
+
 function showScreen(name) {
   for (const id of ["setup", "interview", "report"]) {
     $("#screen-" + id).hidden = id !== name;
   }
-  $("#progress").hidden = name !== "interview";
   window.scrollTo(0, 0);
 }
 
@@ -55,6 +77,10 @@ function setPhase(name) {
     node.hidden = node.dataset.phase !== name;
   }
   document.body.classList.toggle("recording", name === "recording");
+  state.phase = name;
+  if (name === "recording") UI.mode("listening");
+  else if (name === "processing") UI.mode("thinking");
+  else UI.stopTalking();
 }
 
 let retryAction = null;
@@ -64,6 +90,7 @@ function showError(message, retry) {
   retryAction = retry || null;
   $("#error-retry").hidden = !retry;
   $("#error").hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function hideError() {
@@ -126,6 +153,7 @@ function playUrl(url) {
     return;
   }
   player = new Audio(url);
+  UI.speak(player);
   // the browser can block autoplay, the play buttons still work
   player.play().catch(() => {});
 }
@@ -145,11 +173,35 @@ function onSetupSubmit(event) {
     return;
   }
 
+  if (state.uploading) {
+    showError("Your resume is still uploading. Give it a moment.");
+    return;
+  }
+  const withResume = form.get("resume_mode") === "with";
+  if (withResume && !state.resumeText) {
+    showError("Please upload your resume, or choose Without resume.");
+    return;
+  }
+
+  let company = String(form.get("company") || "none");
+  if (company === "other") {
+    company = $("#company-other").value.trim();
+    if (!company) {
+      showError("Please type the company name, or choose None.");
+      $("#company-other").focus();
+      return;
+    }
+  }
+  const picked = document.querySelector('input[name="company"]:checked');
+  state.target = company === "none" ? "General" : (picked.value === "other" ? company : picked.nextElementSibling.textContent);
+
   beginSession({
     role,
     level: form.get("level"),
     language: form.get("language"),
     num_questions: Number(form.get("num_questions")),
+    company,
+    resume_text: withResume ? state.resumeText : "",
   });
 }
 
@@ -164,6 +216,7 @@ async function beginSession(payload) {
     });
     state.sessionId = data.session_id;
     state.finished = false;
+    state.history = [];
     showScreen("interview");
     showQuestion(data.question);
   } catch (err) {
@@ -180,21 +233,15 @@ function showQuestion(q) {
   $("#q-count").textContent = `Question ${q.number} of ${q.total}`;
   $("#question-text").textContent = q.text;
   $("#replay-question").hidden = !q.audio_url;
-  renderSegments(q.number, q.total);
+  $("#q-type").textContent = q.type || "General";
+  $("#q-diff").textContent = q.difficulty || "medium";
+  UI.stepper(q.number, q.total);
+  refreshHeader();
 
   setPhase("idle");
   window.scrollTo(0, 0);
   $("#question-text").focus({ preventScroll: true });
   playUrl(q.audio_url);
-}
-
-function renderSegments(number, total) {
-  const wrap = $("#segments");
-  wrap.replaceChildren();
-  for (let i = 1; i <= total; i++) {
-    wrap.append(h("span", i < number ? "done" : i === number ? "current" : ""));
-  }
-  wrap.setAttribute("aria-label", `Question ${number} of ${total}`);
 }
 
 
@@ -216,6 +263,7 @@ function micErrorMessage(err) {
 }
 
 async function startRecording() {
+  if (state.starting || state.phase !== "idle") return;
   hideError();
   stopAudio();
 
@@ -224,6 +272,7 @@ async function startRecording() {
     return;
   }
 
+  state.starting = true;
   try {
     state.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true },
@@ -231,6 +280,8 @@ async function startRecording() {
   } catch (err) {
     showError(micErrorMessage(err));
     return;
+  } finally {
+    state.starting = false;
   }
 
   const mimeType = pickMimeType();
@@ -263,14 +314,14 @@ function stopRecording() {
   state.stream.getTracks().forEach((track) => track.stop());
 }
 
-// the ring around the stop button grows and shrinks with your voice
+// the orb grows with your voice and the waveform follows it live
 function startMeter(stream) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
 
   const ctx = new AudioCtx();
   const analyser = ctx.createAnalyser();
-  analyser.fftSize = 512;
+  analyser.fftSize = 2048;
   ctx.createMediaStreamSource(stream).connect(analyser);
 
   const samples = new Uint8Array(analyser.fftSize);
@@ -286,6 +337,7 @@ function startMeter(stream) {
     }
     const level = Math.min(1, Math.sqrt(sum / samples.length) * 4);
     target.style.setProperty("--level", level.toFixed(2));
+    UI.drawWave(samples);
     frame = requestAnimationFrame(loop);
   };
   loop();
@@ -375,7 +427,7 @@ async function toWav(blob) {
     const v = Math.abs(samples[i]);
     if (v > peak) peak = v;
   }
-  return { blob: encodeWav(samples, WAV_RATE), name: "answer.wav", peak };
+  return { blob: encodeWav(samples, WAV_RATE), name: "answer.wav", peak, metrics: UI.analyzeVoice(samples, WAV_RATE) };
 }
 
 function encodeWav(samples, sampleRate) {
@@ -417,6 +469,7 @@ async function sendAnswer() {
 
   const form = new FormData();
   form.append("audio", state.answer.blob, state.answer.name);
+  form.append("metrics", JSON.stringify(state.answer.metrics || {}));
 
   try {
     const data = await api(`/api/session/${state.sessionId}/answer`, { method: "POST", body: form });
@@ -433,8 +486,8 @@ function showFeedback(data) {
   state.replyUrl = data.reply_audio_url;
 
   $("#fb-transcript").textContent = data.transcript;
-  $("#fb-average").textContent = data.average.toFixed(1);
-  fillBars($("#fb-bars"), data.scores);
+  state.history.push({ average: data.average, scores: data.scores });
+  refreshHeader();
   $("#fb-strength").textContent = data.strength;
   $("#fb-improvement").textContent = data.improvement;
   fillFixes($("#fb-grammar"), data.grammar_fixes);
@@ -445,8 +498,35 @@ function showFeedback(data) {
   $("#next-btn").textContent = data.finished ? "See my report" : "Next question";
   $("#finish-btn").hidden = data.finished;
 
+  $("#next-btn").append(" ", h("kbd", "", "Enter"));
+
   setPhase("feedback");
+  UI.countUp($("#fb-average"), data.average, 1);
+  UI.rings($("#fb-rings"), data.scores, SCORE_LABELS);
+  drawFeedbackCharts(data);
+  if (data.average >= 4) UI.confetti();
   playUrl(data.reply_audio_url);
+}
+
+function drawFeedbackCharts(data) {
+  const keys = Object.keys(SCORE_LABELS);
+  const series = [{ label: "This answer", values: keys.map((k) => data.scores[k]) }];
+  if (state.history.length > 1) {
+    series.push({
+      label: "Interview average",
+      values: keys.map((k) => state.history.reduce((sum, t) => sum + t.scores[k], 0) / state.history.length),
+    });
+  }
+  UI.radar("fb-radar", keys.map((k) => SCORE_LABELS[k]), series);
+
+  const voice = data.voice;
+  $("#fb-voice-wrap").hidden = !voice.available;
+  if (!voice.available) return;
+  UI.countUp($("#fb-delivery"), voice.delivery_score, 0);
+  UI.voiceTiles($("#fb-tiles"), voice);
+  UI.fillerChips($("#fb-fillers"), voice.fillers);
+  $("#fb-voice-tip").textContent = data.voice_tip;
+  UI.bars("fb-delivery-chart", Object.keys(voice.breakdown), Object.values(voice.breakdown), { horizontal: true, max: 100, label: "Out of 100" });
 }
 
 function goNext() {
@@ -455,29 +535,6 @@ function goNext() {
     showReport();
   } else {
     showQuestion(state.nextQuestion);
-  }
-}
-
-function tone(value) {
-  return value >= 4 ? "high" : value === 3 ? "mid" : "low";
-}
-
-function barRow(label, value) {
-  const rounded = Math.round(value);
-  const row = h("div", "bar-row");
-  const track = h("span", "bar-track");
-  for (let i = 1; i <= 5; i++) {
-    track.append(h("span", i <= rounded ? `seg ${tone(rounded)}` : "seg"));
-  }
-  const shown = Number.isInteger(value) ? String(value) : value.toFixed(1);
-  row.append(h("span", "bar-label", label), track, h("span", "bar-value", shown));
-  return row;
-}
-
-function fillBars(container, scores) {
-  container.replaceChildren();
-  for (const key of Object.keys(SCORE_LABELS)) {
-    if (key in scores) container.append(barRow(SCORE_LABELS[key], scores[key]));
   }
 }
 
@@ -497,6 +554,7 @@ async function showReport() {
   hideError();
   stopAudio();
   showScreen("report");
+  UI.stepper(state.question.total + 1, state.question.total);
   $("#report-loading").hidden = false;
   $("#report-body").hidden = true;
 
@@ -519,10 +577,13 @@ function renderReport(r) {
   $("#report-body").hidden = false;
 
   const level = r.level === "fresher" ? "fresher" : "experienced";
-  $("#r-role").textContent = `${r.role}, ${level}. ${r.answered} of ${r.total} questions answered.`;
-  $("#r-overall").textContent = r.average_overall.toFixed(1);
+  const extras = [r.company && `Target: ${r.company}`, r.used_resume && "Resume used"].filter(Boolean).join(" · ");
+  $("#r-role").textContent = `${r.role}, ${level}. ${r.answered} of ${r.total} questions answered.${extras ? " " + extras + "." : ""}`;
+  UI.overallRing($("#r-overall-ring"), r.average_overall);
   $("#r-summary").textContent = r.summary;
-  fillBars($("#r-bars"), r.average_scores);
+  UI.rings($("#r-rings"), r.average_scores, SCORE_LABELS);
+  drawReportCharts(r);
+  if (r.average_overall >= 4) UI.confetti();
   fillList($("#r-strengths"), r.strengths);
   fillList($("#r-focus"), r.focus_areas);
   fillList($("#r-tips"), r.tips);
@@ -533,7 +594,7 @@ function renderReport(r) {
   for (const t of r.turns) {
     const details = h("details");
     const summary = h("summary");
-    summary.append(h("span", "", `${t.number}. ${t.question}`), h("span", "score", `${t.average.toFixed(1)} / 5`));
+    summary.append(h("span", "", `${t.number}. [${t.type}] ${t.question}`), h("span", "score", `${t.average.toFixed(1)} / 5`));
 
     const body = h("div", "detail");
     body.append(textBlock("What you said", t.transcript));
@@ -555,6 +616,42 @@ function renderReport(r) {
   }
 }
 
+function drawReportCharts(r) {
+  const keys = Object.keys(SCORE_LABELS);
+  const names = r.turns.map((t) => "Q" + t.number);
+  UI.radar("r-radar", keys.map((k) => SCORE_LABELS[k]), [{ label: "Average", values: keys.map((k) => r.average_scores[k]) }]);
+  UI.line("r-trend", names, r.turns.map((t) => t.average), "Average score");
+  renderHeat($("#r-heat"), r.turns, keys);
+
+  $("#r-voice-wrap").hidden = !r.voice.available;
+  if (!r.voice.available) return;
+  UI.countUp($("#r-delivery"), r.voice.avg_delivery, 0);
+  $("#r-voice-summary").textContent = r.voice_summary;
+  UI.fillerChips($("#r-fillers"), r.voice.fillers);
+  const wpm = r.turns.map((t) => (t.voice.available ? t.voice.wpm : null));
+  UI.bars("r-wpm", names, wpm, { label: "Words per minute", band: { from: 110, to: 160 }, max: Math.max(200, ...wpm.filter(Boolean)) + 20 });
+  UI.bars("r-fill-chart", names, r.turns.map((t) => (t.voice.available ? t.voice.filler_count : null)), { label: "Filler words", color: "#a78bfa", step: 1 });
+  UI.bars("r-breakdown", Object.keys(r.voice.breakdown), Object.values(r.voice.breakdown), { label: "Out of 100", horizontal: true, max: 100 });
+}
+
+function renderHeat(table, turns, keys) {
+  table.replaceChildren();
+  const head = h("tr");
+  head.append(h("th", "", "Skill"));
+  for (const t of turns) head.append(h("th", "", "Q" + t.number));
+  table.append(head);
+  for (const key of keys) {
+    const row = h("tr");
+    row.append(h("th", "", SCORE_LABELS[key]));
+    for (const t of turns) {
+      const cell = h("td", "", String(t.scores[key]));
+      cell.style.background = `rgba(34, 230, 255, ${(t.scores[key] / 5 * 0.55).toFixed(2)})`;
+      row.append(cell);
+    }
+    table.append(row);
+  }
+}
+
 function textBlock(title, text) {
   const wrap = h("div");
   wrap.append(h("h3", "", title), h("p", "", text));
@@ -566,12 +663,110 @@ function startOver() {
   hideError();
   state.sessionId = null;
   state.answer = null;
+  state.question = null;
+  state.history = [];
+  UI.clearCharts();
   setPhase("idle");
   showScreen("setup");
+  UI.stepper(0, selectedTotal());
+  refreshHeader();
+}
+
+
+/* ---------------------------------------------------------------- resume upload */
+
+async function uploadResume(file) {
+  if (!file) return;
+  hideError();
+  const status = $("#resume-status"), drop = $("#resume-drop");
+  state.resumeText = "";
+  state.uploading = true;
+  drop.classList.remove("ok");
+  status.textContent = `Reading ${file.name}...`;
+
+  const form = new FormData();
+  form.append("file", file, file.name);
+  try {
+    const data = await api("/api/resume", { method: "POST", body: form });
+    state.resumeText = data.text;
+    status.textContent = `${data.name} ready. ${data.chars.toLocaleString()} characters read. Click to replace.`;
+    drop.classList.add("ok");
+  } catch (err) {
+    status.textContent = "Drop your resume here, or click to choose (PDF, DOCX or TXT, up to 5 MB)";
+    $("#resume-file").value = "";
+    showError(err.message);
+  } finally {
+    state.uploading = false;
+  }
+}
+
+
+/* ---------------------------------------------------------------- keyboard shortcuts */
+
+function toggleHelp(show) {
+  $("#help").hidden = show === undefined ? !$("#help").hidden : !show;
+}
+
+function replayCoach() {
+  if (state.phase === "feedback") playUrl(state.replyUrl);
+  else if (state.question) playUrl(state.question.audio_url);
+}
+
+function onKeydown(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+  const target = event.target;
+  if (target.matches("input, textarea, select, audio, [contenteditable]")) return;
+
+  if (event.key === "?") { toggleHelp(); return; }
+  if (event.key === "Escape") { toggleHelp(false); return; }
+  if ($("#screen-interview").hidden || !$("#help").hidden) return;
+
+  const onControl = target.matches("button, a, summary");
+  const key = event.key.toLowerCase();
+  if (key === " ") {
+    if (onControl) return;           // the browser already presses the focused button
+    event.preventDefault();
+    if (state.phase === "idle") startRecording();
+    else if (state.phase === "recording") stopRecording();
+  } else if (key === "enter") {
+    if (onControl) return;
+    if (state.phase === "review") sendAnswer();
+    else if (state.phase === "feedback") goNext();
+  } else if (key === "r" && state.phase === "review") {
+    recordAgain();
+  } else if (key === "p" && (state.phase === "idle" || state.phase === "feedback")) {
+    replayCoach();
+  } else if (key === "f" && state.phase === "feedback" && !$("#finish-btn").hidden) {
+    showReport();
+  }
 }
 
 
 /* ---------------------------------------------------------------- wiring */
+
+document.addEventListener("keydown", onKeydown);
+$("#help-btn").addEventListener("click", () => toggleHelp());
+$("#help-close").addEventListener("click", () => toggleHelp(false));
+$("#help").addEventListener("click", (e) => { if (e.target === e.currentTarget) toggleHelp(false); });
+
+$("#setup-form").addEventListener("change", (e) => {
+  if (e.target.name === "resume_mode") $("#resume-box").hidden = e.target.value !== "with";
+  if (e.target.name === "company") $("#company-other-box").hidden = e.target.value !== "other";
+  if (e.target.name === "num_questions") UI.stepper(0, selectedTotal());
+});
+$("#resume-file").addEventListener("change", (e) => uploadResume(e.target.files[0]));
+const resumeDrop = $("#resume-drop");
+for (const name of ["dragover", "dragenter"]) {
+  resumeDrop.addEventListener(name, (e) => { e.preventDefault(); resumeDrop.classList.add("over"); });
+}
+resumeDrop.addEventListener("dragleave", () => resumeDrop.classList.remove("over"));
+resumeDrop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  resumeDrop.classList.remove("over");
+  uploadResume(e.dataTransfer.files[0]);
+});
+
+UI.stepper(0, selectedTotal());
 
 $("#setup-form").addEventListener("submit", onSetupSubmit);
 $("#record-btn").addEventListener("click", startRecording);
