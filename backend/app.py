@@ -82,8 +82,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("coach")
 
 client = genai.Client(api_key=GEMINI_KEY)
-pool = ThreadPoolExecutor(max_workers=1)   # lets us make two audio clips at the same time
-TTS_LOCK = threading.Lock()
+pool = ThreadPoolExecutor(max_workers=4)   # lets us make two audio clips at the same time
 
 
 # ---------------------------------------------------------------- sessions
@@ -270,7 +269,6 @@ def ask_gemini(prompt, parse):
 
 # ---------------------------------------------------------------- text to speech
 
-
 def speak(text, out_path, language_code):
     body = {
         "text": text,
@@ -279,70 +277,26 @@ def speak(text, out_path, language_code):
         "language": language_code,
         "speed": 1.0,
         "audio_config": {
-            "sample_rate": 48000,
-            "num_channels": 1,
-            "sample_width": 2,
-            "encoding": "linear_pcm",
-            "container": "wav",
+            "sample_rate": 48000, "num_channels": 1, "sample_width": 2,
+            "encoding": "linear_pcm", "container": "wav",
         },
     }
-
-    # Only one request can communicate with Timbre at a time.
-    with TTS_LOCK:
-
-        for attempt in range(3):
-            try:
-                r = requests.post(
-                    TTS_URL,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-API-Key-ID": GNANI_KEY,
-                    },
-                    json=body,
-                    timeout=60,
-                )
-
-                if r.status_code == 200:
-                    with open(out_path, "wb") as f:
-                        f.write(r.content)
-                    return
-
-                # Timbre concurrency/rate limit
-                if r.status_code == 429 and attempt < 2:
-                    retry_after = r.headers.get("Retry-After")
-
-                    try:
-                        wait = float(retry_after) if retry_after else 2 ** (attempt + 1)
-                    except ValueError:
-                        wait = 2 ** (attempt + 1)
-
-                    wait = max(1, min(wait, 15))
-
-                    log.warning(
-                        "Timbre 429. Retrying in %.1f seconds (attempt %d/3)",
-                        wait, attempt + 1
-                    )
-
-                    time.sleep(wait)
-                    continue
-
-                # Temporary server error
-                if r.status_code >= 500 and attempt < 2:
-                    time.sleep(2 ** (attempt + 1))
-                    continue
-
-                raise RuntimeError(
-                    f"Timbre failed: {r.status_code} {r.text[:200]}"
-                )
-
-            except requests.RequestException:
-                if attempt == 2:
-                    raise
-
-                time.sleep(2 ** (attempt + 1))
-
-    raise RuntimeError("Timbre failed after multiple attempts")
-
+    for attempt in (1, 2):
+        r = requests.post(
+            TTS_URL,
+            headers={"Content-Type": "application/json", "X-API-Key-ID": GNANI_KEY},
+            json=body,
+            timeout=60,
+        )
+        if r.status_code == 200:
+            with open(out_path, "wb") as f:
+                f.write(r.content)
+            return
+        if r.status_code >= 500 and attempt == 1:
+            time.sleep(2)                         # temporary server error: retry once
+            continue
+        break
+    raise RuntimeError(f"Timbre failed: {r.status_code} {r.text[:200]}")
 
 
 def make_audio(text, language, name):
